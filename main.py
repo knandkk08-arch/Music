@@ -4,6 +4,8 @@ import subprocess
 import uuid
 import threading
 import glob as globmod
+import random
+import time
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -12,6 +14,45 @@ BOT_TOKEN = "8330954224:AAF7CKlLbVY0vQp2qGt6yYOL5nB4QnB5VqY"
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+]
+
+
+PLAYER_CLIENT_COMBOS = [
+    ['default', 'tv', 'tv_embedded'],
+    ['tv', 'default'],
+    ['tv_embedded', 'tv'],
+    ['default', 'mweb'],
+    ['mweb', 'tv'],
+]
+
+
+def _get_common_ydl_opts(player_combo=None):
+    if player_combo is None:
+        player_combo = PLAYER_CLIENT_COMBOS[0]
+    return {
+        'quiet': True,
+        'no_warnings': True,
+        'socket_timeout': 60,
+        'source_address': '0.0.0.0',
+        'skip_unavailable_fragments': True,
+        'fragment_retries': 10,
+        'retries': 5,
+        'extractor_args': {'youtube': {'player_client': player_combo}},
+        'age_limit': 100,
+        'nocheckcertificate': True,
+        'http_headers': {
+            'User-Agent': random.choice(USER_AGENTS),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        },
+    }
 
 SUPPORTED_DOMAINS = [
     'youtube.com', 'youtu.be',
@@ -399,12 +440,7 @@ async def show_download_options(update: Update, context: ContextTypes.DEFAULT_TY
     if not title:
         await query.edit_message_text("🔍 Loading...")
         try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'extractor_args': {'youtube': {'player_client': ['default', 'tv', 'tv_embedded']}},
-                'age_limit': 100,
-            }
+            ydl_opts = _get_common_ydl_opts()
             loop = asyncio.get_event_loop()
             info = await loop.run_in_executor(None, lambda: _extract_info_no_download(ydl_opts, f"https://www.youtube.com/watch?v={video_id}"))
             title = info.get('title', 'Unknown')
@@ -462,7 +498,8 @@ async def download_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     progress_task = None
 
     try:
-        ydl_opts = {
+        ydl_opts = _get_common_ydl_opts()
+        ydl_opts.update({
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -470,20 +507,11 @@ async def download_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'preferredquality': '320',
             }],
             'outtmpl': os.path.join(session_dir, '%(id)s.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
             'nopostoverwrites': False,
-            'socket_timeout': 60,
-            'source_address': '0.0.0.0',
-            'skip_unavailable_fragments': True,
-            'fragment_retries': 10,
-            'retries': 10,
-            'extractor_args': {'youtube': {'player_client': ['default', 'tv', 'tv_embedded']}},
-            'age_limit': 100,
             'progress_hooks': [create_progress_hook(progress_data, lock)],
             'buffersize': 1024,
             'http_chunk_size': 1048576,
-        }
+        })
 
         progress_task = asyncio.create_task(update_progress_message(status_msg, progress_data, lock))
 
@@ -603,23 +631,15 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_yt = is_youtube_link(video_url)
 
     try:
-        ydl_opts = {
+        ydl_opts = _get_common_ydl_opts()
+        ydl_opts.update({
             'format': 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]' if is_yt else 'best[ext=mp4][height<=720]/best[height<=720]/best',
             'merge_output_format': 'mp4',
             'outtmpl': os.path.join(session_dir, '%(id)s.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-            'socket_timeout': 60,
-            'source_address': '0.0.0.0',
-            'skip_unavailable_fragments': True,
-            'fragment_retries': 10,
-            'retries': 10,
-            'extractor_args': {'youtube': {'player_client': ['default', 'tv', 'tv_embedded']}},
-            'age_limit': 100,
             'progress_hooks': [create_progress_hook(progress_data, lock)],
             'buffersize': 1024,
             'http_chunk_size': 1048576,
-        }
+        })
 
         progress_task = asyncio.create_task(update_progress_message(status_msg, progress_data, lock))
 
@@ -673,23 +693,15 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 progress_data_retry, lock_retry = _make_progress_data()
                 progress_data_retry['last_shown_pct'] = 20
 
-                ydl_opts_low = {
+                ydl_opts_low = _get_common_ydl_opts()
+                ydl_opts_low.update({
                     'format': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]' if is_yt else 'best[ext=mp4][height<=480]/best[height<=480]/best',
                     'merge_output_format': 'mp4',
                     'outtmpl': os.path.join(session_dir, '%(id)s.%(ext)s'),
-                    'quiet': True,
-                    'no_warnings': True,
-                    'socket_timeout': 60,
-                    'source_address': '0.0.0.0',
-                    'skip_unavailable_fragments': True,
-                    'fragment_retries': 10,
-                    'retries': 10,
-                    'extractor_args': {'youtube': {'player_client': ['default', 'tv', 'tv_embedded']}},
-                    'age_limit': 100,
                     'progress_hooks': [create_progress_hook(progress_data_retry, lock_retry)],
                     'buffersize': 1024,
                     'http_chunk_size': 1048576,
-                }
+                })
 
                 progress_task = asyncio.create_task(update_progress_message(status_msg, progress_data_retry, lock_retry))
 
@@ -764,8 +776,27 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _download_with_ytdlp(ydl_opts, url):
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(url, download=True)
+    last_error = None
+    for combo in PLAYER_CLIENT_COMBOS:
+        try:
+            retry_opts = dict(ydl_opts)
+            retry_opts['extractor_args'] = {'youtube': {'player_client': combo}}
+            retry_opts['http_headers'] = {
+                'User-Agent': random.choice(USER_AGENTS),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            }
+            with yt_dlp.YoutubeDL(retry_opts) as ydl:
+                return ydl.extract_info(url, download=True)
+        except Exception as e:
+            last_error = e
+            error_str = str(e).lower()
+            if '403' in error_str or 'forbidden' in error_str:
+                time.sleep(1)
+                continue
+            raise
+    raise last_error
 
 
 def _extract_info_no_download(ydl_opts, url):
@@ -827,12 +858,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text(f"🔍 Processing your {platform} link...")
 
     try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extractor_args': {'youtube': {'player_client': ['default', 'tv', 'tv_embedded']}},
-            'age_limit': 100,
-        }
+        ydl_opts = _get_common_ydl_opts()
 
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, lambda: _extract_info_no_download(ydl_opts, message_text))
