@@ -10,7 +10,7 @@ import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-BOT_TOKEN = "8330954224:AAF7CKlLbVY0vQp2qGt6yYOL5nB4QnB5VqY"
+BOT_TOKEN = "8330954224:AAHxtI9JvdP-I_eDuRWQI_T23lupA-J85to"
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
